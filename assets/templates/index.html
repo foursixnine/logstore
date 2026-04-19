@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<body>
+    <form method="post" enctype="multipart/form-data" id="file-upload">
+        <div>Upload a file:</div>
+        <input type="file" name="file" id="file"/>
+        <br/>
+        <input type="submit">
+    </form>
+    <hr />
+    <form method="post" id="data-upload">
+        <div>Upload text:</div>
+        <input type="text" name="filename">
+        <br/>
+        <textarea name="contents"></textarea>
+        <br/>
+        <input type="submit">
+    </form>
+    <hr />
+    <h2>usage:</h2>
+    <pre>curl $SERVER -X POST -F "file=@tmp-log.txt"</pre>
+    Logs are available under <a href="/logs/">logs</a>
+</body>
+</html>
