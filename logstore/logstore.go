@@ -56,9 +56,6 @@ func (mfs *MultipartFormStore) Save(destination string) (string, int, error) {
 		return "", 0, fmt.Errorf("invalid filename")
 	}
 
-	log.Printf("'safe' filename is: %s", safeFilename)
-	log.Printf("'unsafe' filename is: %s", mfs.Header.Filename)
-
 	file_destination := filepath.Join(destination, mfs.Header.Filename)
 
 	file, err := os.Create(file_destination)
