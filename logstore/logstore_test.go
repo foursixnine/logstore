@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,3 +102,148 @@ Content-Type: application/octet-stream
 [file contents]
 ------WebKitFormBoundary--
 */
+
+func TestSimpleFormStore_Save(t *testing.T) {
+	dest := t.TempDir()
+	store := &SimpleFormStore{
+		File:     "test_simple.txt",
+		Contents: "hello world simple",
+	}
+
+	filename, written, err := store.Save(dest)
+	if err != nil {
+		t.Fatalf("unexpected error saving simple form: %v", err)
+	}
+
+	if written != len("hello world simple") {
+		t.Errorf("expected %d bytes written, got %d", len("hello world simple"), written)
+	}
+
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("failed to read written file: %v", err)
+	}
+	if string(content) != "hello world simple" {
+		t.Errorf("expected 'hello world simple', got '%s'", string(content))
+	}
+}
+
+func TestHandleFileUpload_SimpleForm(t *testing.T) {
+	workingDir := t.TempDir()
+	ls := &LogStore{
+		WorkingDir:       workingDir,
+		TempStringLength: 4,
+		MaxUploadSize:    1024,
+	}
+
+	form := url.Values{}
+	form.Add("filename", "orchestrated_simple.txt")
+	form.Add("contents", "orchestrated contents")
+
+	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	savedPath, err := ls.handleFileUpload(req)
+	if err != nil {
+		t.Fatalf("unexpected error in handleFileUpload: %v", err)
+	}
+
+	fullPath := filepath.Join(workingDir, savedPath)
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		t.Fatalf("failed to read saved file: %v", err)
+	}
+	if string(content) != "orchestrated contents" {
+		t.Errorf("expected 'orchestrated contents', got '%s'", string(content))
+	}
+}
+
+func init() {
+	initStoreFactories()
+}
+
+func TestHandleFileUpload_MultipartForm(t *testing.T) {
+	workingDir := t.TempDir()
+	ls := &LogStore{
+		WorkingDir:       workingDir,
+		TempStringLength: 4,
+		MaxUploadSize:    1024,
+	}
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", "orchestrated_multipart.txt")
+	if err != nil {
+		t.Fatalf("failed to create form file: %v", err)
+	}
+	part.Write([]byte("multipart contents"))
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	savedPath, err := ls.handleFileUpload(req)
+	if err != nil {
+		t.Fatalf("unexpected error in handleFileUpload: %v", err)
+	}
+
+	fullPath := filepath.Join(workingDir, savedPath)
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		t.Fatalf("failed to read saved file: %v", err)
+	}
+	if string(content) != "multipart contents" {
+		t.Errorf("expected 'multipart contents', got '%s'", string(content))
+	}
+}
+
+func TestUploadSizeLimit(t *testing.T) {
+	workingDir := t.TempDir()
+	ls := &LogStore{
+		WorkingDir:       workingDir,
+		TempStringLength: 4,
+		MaxUploadSize:    512, // 512 bytes limit
+	}
+
+	t.Run("Exceeds Limit", func(t *testing.T) {
+		body := new(bytes.Buffer)
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("file", "large.txt")
+		if err != nil {
+			t.Fatalf("failed to create form file: %v", err)
+		}
+		part.Write(bytes.Repeat([]byte("a"), 1024)) // 1KB
+		writer.Close()
+
+		req := httptest.NewRequest("POST", "/", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		rr := httptest.NewRecorder()
+
+		ls.UploadFileHandler(rr, req)
+
+		if rr.Code == http.StatusOK {
+			t.Errorf("Expected failure for file exceeding size limit, but got StatusOK")
+		}
+	})
+
+	t.Run("Within Limit", func(t *testing.T) {
+		body := new(bytes.Buffer)
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("file", "small.txt")
+		if err != nil {
+			t.Fatalf("failed to create form file: %v", err)
+		}
+		part.Write(bytes.Repeat([]byte("a"), 256)) // 256B
+		writer.Close()
+
+		req := httptest.NewRequest("POST", "/", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		rr := httptest.NewRecorder()
+
+		ls.UploadFileHandler(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("Expected success for file within size limit, but got %v", rr.Code)
+		}
+	})
+}

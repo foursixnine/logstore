@@ -1,54 +1,44 @@
 package main
 
 import (
-	"context"
+	"flag"
 	"log"
-	"net/http"
 	"os"
-	"os/signal"
 
 	"github.com/foursixnine/logstore/logstore"
 )
 
-func main() {
-	workingDir, err := os.MkdirTemp("tmp/", "logstore-workdir-*")
-	ls := &logstore.LogStore{
-		WorkingDir:       workingDir,
-		TempStringLength: 4,
-		MaxUploadSize:    32 << 20,
-	}
+type Options struct {
+	RootPath         string
+	Port             string
+	TempStringLength int
+	MaxUploadSize    int64
+}
 
+func main() {
+	var Config Options
+
+	flag.StringVar(&Config.RootPath, "root-path", "tmp/logstore/", "Root path for the application, defaults to $PWD/tmp/logstore; path must exist")
+	flag.StringVar(&Config.Port, "port", ":3000", "Port to listen on")
+	flag.IntVar(&Config.TempStringLength, "string-length", 4, "Random string length, used as a name for directories to store logs")
+	flag.Int64Var(&Config.MaxUploadSize, "max-upload-size", 32<<20, "Maximum upload size in bytes")
+	flag.Parse()
+
+	workingDir, err := os.MkdirTemp(Config.RootPath, "logstore-workdir-*")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer ls.Cleanup()
-	log.Printf("Using %s as working dir", workingDir)
 
-	var server http.Server
-	server.Addr = ":3000"
-	http.HandleFunc("POST /", ls.UploadFileHandler)
-	http.HandleFunc("GET /", ls.IndexHandler)
-	http.Handle("GET /logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir(ls.WorkingDir))))
+	ls := &logstore.LogStore{
+		WorkingDir:       workingDir,
+		TempStringLength: Config.TempStringLength,
+		MaxUploadSize:    Config.MaxUploadSize,
+		ServerAddress:    Config.Port,
+	}
 
-	idleConnsClosed := make(chan struct{})
-	go func() {
-		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt)
-		<-sigint
-
-		// We received an interrupt signal, shut down.
-		if err := server.Shutdown(context.Background()); err != nil {
-			// Error from closing listeners, or context timeout:
-			log.Printf("HTTP server Shutdown: %v", err)
-		}
-		close(idleConnsClosed)
-	}()
-
-	log.Println("Starting logstore")
-	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+	if err := ls.Run(); err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Stopping logstore")
-	<-idleConnsClosed
-	log.Println("Connections stopped")
+
+	log.Println("Server stopped successfully")
 }

@@ -1,16 +1,17 @@
 package utils
 
 import (
-	"math/rand"
+	"crypto/rand"
 )
 
 var charset = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 func RandomString(n int) string {
 	b := make([]byte, n)
-	for i := range b {
-		// randomly select 1 character from given charset
-		b[i] = charset[rand.Intn(len(charset))]
+	if _, err := rand.Read(b); err == nil {
+		for i := range b {
+			b[i] = charset[int(b[i])%len(charset)]
+		}
 	}
 	return string(b)
 }

@@ -17,7 +17,7 @@
     </form>
     <hr />
     <h2>usage:</h2>
-    <pre>curl $SERVER -X POST -F "file=@tmp-log.txt"</pre>
-    Logs are available under <a href="/logs/">logs</a>
+    <pre>curl {{.Host}} -X POST -F "file=@tmp-log.txt"</pre>
+    Logs are available under <a href="{{.Host}}/logs/">{{.Host}}/logs/</a>
 </body>
 </html>

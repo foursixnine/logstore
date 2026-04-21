@@ -1,5 +1,5 @@
 usage:
 
-  curl $SERVER -X POST -F "file=@tmp-log.txt"
+  curl {{.Host}} -X POST -F "file=@tmp-log.txt"
 
-Logs are available under $SERVER/logs
+Logs are available under {{.Host}}/logs
