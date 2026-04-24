@@ -1,12 +1,11 @@
 package logstore
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
+	"os/signal"
 )
 
 type LogStore struct {
@@ -16,36 +15,59 @@ type LogStore struct {
 	ServerAddress    string
 }
 
-func (ls *LogStore) handleFileUpload(r *http.Request) (string, error) {
+type LogStoreRuntimeConfig struct {
+	MaxUploadSize    int64
+	TempStringLength int
+	WorkingDir       string
+}
 
-	if len(r.Header["Content-Type"]) < 1 {
-		return "", fmt.Errorf("Content-Type is invalid; Request is invalid")
+func (ls *LogStore) Run() error {
+	defer ls.Cleanup()
+	var server http.Server
+	server.Addr = ls.ServerAddress
+	server.Handler = ls.SetupServer()
+
+	idleConnsClosed := make(chan struct{})
+	go func() {
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt)
+		<-sigint
+
+		if err := server.Shutdown(context.Background()); err != nil {
+			log.Printf("HTTP server Shutdown: %v", err)
+		}
+		close(idleConnsClosed)
+	}()
+
+	log.Printf("Starting logstore on %s", ls.ServerAddress)
+	log.Printf("Storing files at: %s", ls.WorkingDir)
+
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		log.Printf("HTTP server ListenAndServe: %v", err)
+		close(idleConnsClosed)
+		return err
 	}
 
-	contentType := strings.Split(r.Header["Content-Type"][0], ";")[0]
-	store, exists := storeFactories[contentType]
-	if !exists {
-		return "", fmt.Errorf("Unrecognized Content-Type: '%s'", contentType)
+	log.Println("Stopping logstore")
+	<-idleConnsClosed
+	log.Println("Connections stopped")
+	return nil
+}
+
+func (ls *LogStore) SetupServer() *http.ServeMux {
+
+	cfg := &LogStoreRuntimeConfig{
+		MaxUploadSize:    ls.MaxUploadSize,
+		TempStringLength: ls.TempStringLength,
+		WorkingDir:       ls.WorkingDir,
 	}
 
-	fs, err := store(r, ls.MaxUploadSize)
-	if err != nil {
-		return "", err
-	}
-	defer fs.Close()
+	initServer()
 
-	destination, err := ls.createDestDir()
-	if err != nil {
-		return "", err
-	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /", UploadFileHandler(cfg))
+	mux.HandleFunc("GET /", IndexHandler(cfg))
+	mux.Handle("GET /logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir(ls.WorkingDir))))
+	return mux
 
-	file, written, err := fs.Save(destination)
-	if err != nil {
-		os.RemoveAll(destination)
-		return "", err
-	}
-
-	log.Printf("Written %d bytes to %s", written, file)
-	cleanPath := strings.TrimPrefix(file, filepath.Join(ls.WorkingDir))
-	return cleanPath, nil
 }

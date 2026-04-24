@@ -24,6 +24,12 @@ func TestPathTraversalVulnerability(t *testing.T) {
 		MaxUploadSize:    32 << 20,
 	}
 
+	cfg := &LogStoreRuntimeConfig{
+		MaxUploadSize:    ls.MaxUploadSize,
+		TempStringLength: ls.TempStringLength,
+		WorkingDir:       ls.WorkingDir,
+	}
+
 	// Create a test file outside the working directory
 	outsideDir := filepath.Dir(workingDir)
 	outsideFile := filepath.Join(outsideDir, "sensitive_file.txt")
@@ -54,7 +60,7 @@ func TestPathTraversalVulnerability(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	// Call handleFileUpload
-	filename, err := ls.handleFileUpload(req)
+	filename, err := handleFileUpload(req, cfg)
 	if err != nil {
 		// Currently the code doesn't prevent this, but let's see what path it returns
 		t.Logf("Error (expected if fixed): %v", err)
@@ -136,6 +142,12 @@ func TestHandleFileUpload_SimpleForm(t *testing.T) {
 		MaxUploadSize:    1024,
 	}
 
+	cfg := &LogStoreRuntimeConfig{
+		MaxUploadSize:    ls.MaxUploadSize,
+		TempStringLength: ls.TempStringLength,
+		WorkingDir:       ls.WorkingDir,
+	}
+
 	form := url.Values{}
 	form.Add("filename", "orchestrated_simple.txt")
 	form.Add("contents", "orchestrated contents")
@@ -143,7 +155,7 @@ func TestHandleFileUpload_SimpleForm(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	savedPath, err := ls.handleFileUpload(req)
+	savedPath, err := handleFileUpload(req, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error in handleFileUpload: %v", err)
 	}
@@ -170,6 +182,12 @@ func TestHandleFileUpload_MultipartForm(t *testing.T) {
 		MaxUploadSize:    1024,
 	}
 
+	cfg := &LogStoreRuntimeConfig{
+		MaxUploadSize:    ls.MaxUploadSize,
+		TempStringLength: ls.TempStringLength,
+		WorkingDir:       ls.WorkingDir,
+	}
+
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
 	part, err := writer.CreateFormFile("file", "orchestrated_multipart.txt")
@@ -182,7 +200,7 @@ func TestHandleFileUpload_MultipartForm(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	savedPath, err := ls.handleFileUpload(req)
+	savedPath, err := handleFileUpload(req, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error in handleFileUpload: %v", err)
 	}
@@ -205,6 +223,12 @@ func TestUploadSizeLimit(t *testing.T) {
 		MaxUploadSize:    512, // 512 bytes limit
 	}
 
+	cfg := &LogStoreRuntimeConfig{
+		MaxUploadSize:    ls.MaxUploadSize,
+		TempStringLength: ls.TempStringLength,
+		WorkingDir:       ls.WorkingDir,
+	}
+
 	t.Run("Exceeds Limit", func(t *testing.T) {
 		body := new(bytes.Buffer)
 		writer := multipart.NewWriter(body)
@@ -219,7 +243,7 @@ func TestUploadSizeLimit(t *testing.T) {
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 		rr := httptest.NewRecorder()
 
-		ls.UploadFileHandler(rr, req)
+		UploadFileHandler(cfg)(rr, req)
 
 		if rr.Code == http.StatusOK {
 			t.Errorf("Expected failure for file exceeding size limit, but got StatusOK")
@@ -240,7 +264,7 @@ func TestUploadSizeLimit(t *testing.T) {
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 		rr := httptest.NewRecorder()
 
-		ls.UploadFileHandler(rr, req)
+		UploadFileHandler(cfg)(rr, req)
 
 		if rr.Code != http.StatusOK {
 			t.Errorf("Expected success for file within size limit, but got %v", rr.Code)

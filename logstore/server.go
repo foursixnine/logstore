@@ -1,14 +1,12 @@
 package logstore
 
 import (
-	"context"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
 
@@ -17,78 +15,84 @@ import (
 
 var tmpl *template.Template
 
-func (ls *LogStore) Run() error {
-	defer ls.Cleanup()
-	var server http.Server
-	server.Addr = ls.ServerAddress
-
+func initTemplates() {
 	tmpl = template.Must(template.ParseFS(assets.FS, "templates/*"))
+	log.Println("Initialized templates")
+}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /", ls.UploadFileHandler)
-	mux.HandleFunc("GET /", ls.IndexHandler)
-	mux.Handle("GET /logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir(ls.WorkingDir))))
-	server.Handler = mux
-
+func initServer() {
+	initTemplates()
 	initStoreFactories()
+}
 
-	idleConnsClosed := make(chan struct{})
-	go func() {
-		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt)
-		<-sigint
+func UploadFileHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxUploadSize)
 
-		if err := server.Shutdown(context.Background()); err != nil {
-			log.Printf("HTTP server Shutdown: %v", err)
+		filename, err := handleFileUpload(r, cfg)
+		if err != nil {
+			log.Printf("Error handling upload: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		close(idleConnsClosed)
-	}()
-
-	log.Printf("Starting logstore on %s", ls.ServerAddress)
-	log.Printf("Storing files at: %s", ls.WorkingDir)
-
-	if err := server.ListenAndServe(); err != http.ErrServerClosed {
-		log.Printf("HTTP server ListenAndServe: %v", err)
-		close(idleConnsClosed)
-		return err
+		message := fmt.Sprintf("File has been uploaded to %s%s\n", r.Host, filepath.Join("/logs", filename))
+		io.WriteString(w, message)
 	}
-
-	log.Println("Stopping logstore")
-	<-idleConnsClosed
-	log.Println("Connections stopped")
-	return nil
 }
 
-func (ls *LogStore) UploadFileHandler(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, ls.MaxUploadSize)
+func IndexHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accept := r.Header.Get("Accept")
+		var templateFile string
+		if strings.Contains(accept, "text/html") {
+			templateFile = "index.html"
+		} else if accept == "application/json" {
+			http.Error(w, "Json output is not yet supported", http.StatusNotImplemented)
+			return
+		} else {
+			templateFile = "plain-text.txt"
+		}
 
-	filename, err := ls.handleFileUpload(r)
+		data := map[string]template.URL{
+			"Host": template.URL(r.Host),
+		}
+
+		if err := tmpl.ExecuteTemplate(w, templateFile, data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
+}
+
+func handleFileUpload(r *http.Request, cfg *LogStoreRuntimeConfig) (string, error) {
+
+	if len(r.Header["Content-Type"]) < 1 {
+		return "", fmt.Errorf("Content-Type is invalid; Request is invalid")
+	}
+
+	contentType := strings.Split(r.Header["Content-Type"][0], ";")[0]
+	store, exists := storeFactories[contentType]
+	if !exists {
+		return "", fmt.Errorf("Unrecognized Content-Type: '%s'", contentType)
+	}
+
+	fs, err := store(r, cfg.MaxUploadSize)
 	if err != nil {
-		log.Printf("Error handling upload: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return "", err
 	}
-	message := fmt.Sprintf("File has been uploaded to %s%s\n", r.Host, filepath.Join("/logs", filename))
-	io.WriteString(w, message)
-}
+	defer fs.Close()
 
-func (ls *LogStore) IndexHandler(w http.ResponseWriter, r *http.Request) {
-	accept := r.Header.Get("Accept")
-	var templateFile string
-	if strings.Contains(accept, "text/html") {
-		templateFile = "index.html"
-	} else if accept == "application/json" {
-		http.Error(w, "Json output is not yet supported", http.StatusNotImplemented)
-		return
-	} else {
-		templateFile = "plain-text.txt"
+	destination, err := createDestDir(cfg)
+	if err != nil {
+		return "", err
 	}
 
-	data := map[string]template.URL{
-		"Host": template.URL(r.Host),
+	file, written, err := fs.Save(destination)
+	if err != nil {
+		os.RemoveAll(destination)
+		return "", err
 	}
 
-	if err := tmpl.ExecuteTemplate(w, templateFile, data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	log.Printf("Written %d bytes to %s", written, file)
+	cleanPath := strings.TrimPrefix(file, filepath.Join(cfg.WorkingDir))
+	return cleanPath, nil
 }

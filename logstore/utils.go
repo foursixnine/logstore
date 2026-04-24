@@ -16,10 +16,10 @@ func (ls *LogStore) Cleanup() {
 	}
 }
 
-func (ls *LogStore) createDestDir() (string, error) {
+func createDestDir(cfg *LogStoreRuntimeConfig) (string, error) {
 	for range 10 {
-		randomString := utils.RandomString(ls.TempStringLength)
-		directory := filepath.Join(ls.WorkingDir, randomString)
+		randomString := utils.RandomString(cfg.TempStringLength)
+		directory := filepath.Join(cfg.WorkingDir, randomString)
 
 		if err := os.Mkdir(directory, 0755); err != nil {
 			log.Printf("Error creating temporary dir (%s): %v", directory, err)
@@ -28,5 +28,5 @@ func (ls *LogStore) createDestDir() (string, error) {
 		return directory, nil
 	}
 
-	return "", fmt.Errorf("Too many attempts to create temporary dir in working directory (%s)", ls.WorkingDir)
+	return "", fmt.Errorf("Too many attempts to create temporary dir in working directory (%s)", cfg.WorkingDir)
 }

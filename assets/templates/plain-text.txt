@@ -2,4 +2,4 @@ usage:
 
   curl {{.Host}} -X POST -F "file=@tmp-log.txt"
 
-Logs are available under {{.Host}}/logs
+Logs are available under http://{{.Host}}/logs

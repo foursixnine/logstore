@@ -158,4 +158,6 @@ func initStoreFactories() {
 		fs, err := NewMultipartFormStore(r, maxUploadSize)
 		return fs, err
 	})
+
+	log.Println("Initialized store factories")
 }
