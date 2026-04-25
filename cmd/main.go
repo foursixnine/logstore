@@ -13,6 +13,7 @@ type Options struct {
 	Port             string
 	TempStringLength int
 	MaxUploadSize    int64
+	Cleanup          bool
 }
 
 func main() {
@@ -22,6 +23,7 @@ func main() {
 	flag.StringVar(&Config.Port, "port", ":3000", "Port to listen on")
 	flag.IntVar(&Config.TempStringLength, "string-length", 4, "Random string length, used as a name for directories to store logs")
 	flag.Int64Var(&Config.MaxUploadSize, "max-upload-size", 32<<20, "Maximum upload size in bytes")
+	flag.BoolVar(&Config.Cleanup, "cleanup", true, "Cleanup working directory on shutdown")
 	flag.Parse()
 
 	workingDir, err := os.MkdirTemp(Config.RootPath, "logstore-workdir-*")
@@ -34,6 +36,7 @@ func main() {
 		TempStringLength: Config.TempStringLength,
 		MaxUploadSize:    Config.MaxUploadSize,
 		ServerAddress:    Config.Port,
+		CleanupDirectory: Config.Cleanup,
 	}
 
 	if err := ls.Run(); err != nil {

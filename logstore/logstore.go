@@ -14,6 +14,7 @@ type LogStore struct {
 	TempStringLength int
 	MaxUploadSize    int64
 	ServerAddress    string
+	CleanupDirectory bool
 }
 
 type LogStoreRuntimeConfig struct {
@@ -70,5 +71,20 @@ func (ls *LogStore) SetupServer() *http.ServeMux {
 	mux.HandleFunc("GET /", IndexHandler(cfg))
 	mux.Handle("GET /logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir(ls.WorkingDir))))
 	return mux
+
+}
+
+func (ls *LogStore) Cleanup() {
+	if !ls.CleanupDirectory {
+		log.Println("Leaving working directory intact")
+		return
+	}
+
+	if err := os.RemoveAll(ls.WorkingDir); err != nil {
+		log.Printf("Failure cleaning up %s: %v\n", ls.WorkingDir, err)
+		return
+	}
+
+	log.Println("Cleaned up working directory")
 
 }
