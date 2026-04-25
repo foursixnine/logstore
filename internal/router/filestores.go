@@ -103,6 +103,7 @@ func (mfs *MultipartFormStore) Save(destination string) (string, int, error) {
 		return "", 0, err
 	}
 	defer file.Close()
+	defer mfs.Close()
 
 	written, err := io.Copy(file, mfs.File)
 	if err != nil {
