@@ -56,7 +56,7 @@ func (ls *LogStore) Run() error {
 	return nil
 }
 
-func (ls *LogStore) SetupServer() *http.ServeMux {
+func (ls *LogStore) SetupServer() *Router {
 
 	cfg := &LogStoreRuntimeConfig{
 		MaxUploadSize:    ls.MaxUploadSize,
@@ -66,9 +66,10 @@ func (ls *LogStore) SetupServer() *http.ServeMux {
 
 	initServer()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /", UploadFileHandler(cfg))
-	mux.HandleFunc("GET /", IndexHandler(cfg))
+	mux := NewRouter()
+	mux.HandleFunc("POST /", mux.UploadFileHandler(cfg))
+	mux.HandleFunc("GET /", mux.IndexHandler(cfg))
+	mux.HandleFunc("GET /healthz", mux.HealthzHandler)
 	mux.Handle("GET /logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir(ls.WorkingDir))))
 	return mux
 

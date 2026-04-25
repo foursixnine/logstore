@@ -31,9 +31,10 @@ func TestRouter(t *testing.T) {
 		requestBody  io.Reader
 		contentType  string
 	}{
-		"Empty GET to / returns Help text":        {"GET", server.URL + "/", 200, server.URL + "/", nil, ""},
-		"Empty POST to / returns content invalid": {"POST", server.URL + "/", 500, "Content-Type is invalid", nil, ""},
-		"Valid POST to / with file returns file":  {"POST", server.URL + "/", 200, "small.txt", body, contentType},
+		"Empty GET to / returns Help text":                {"GET", server.URL + "/", 200, server.URL + "/", nil, ""},
+		"Empty POST to / returns content invalid":         {"POST", server.URL + "/", 500, "Content-Type is invalid", nil, ""},
+		"Valid POST to / with file returns file":          {"POST", server.URL + "/", 200, "small.txt", body, contentType},
+		"Valid GET to /healthz returns number of uploads": {"GET", server.URL + "/healthz", 200, "Total uploads recieved", nil, ""},
 	}
 
 	for name, tc := range tests {

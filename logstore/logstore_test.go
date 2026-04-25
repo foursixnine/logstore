@@ -229,6 +229,7 @@ func TestUploadSizeLimit(t *testing.T) {
 		WorkingDir:       ls.WorkingDir,
 	}
 
+	server := ls.SetupServer()
 	t.Run("Exceeds Limit", func(t *testing.T) {
 		body := new(bytes.Buffer)
 		writer := multipart.NewWriter(body)
@@ -243,7 +244,7 @@ func TestUploadSizeLimit(t *testing.T) {
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 		rr := httptest.NewRecorder()
 
-		UploadFileHandler(cfg)(rr, req)
+		server.UploadFileHandler(cfg)(rr, req)
 
 		if rr.Code == http.StatusOK {
 			t.Errorf("Expected failure for file exceeding size limit, but got StatusOK")
@@ -264,7 +265,7 @@ func TestUploadSizeLimit(t *testing.T) {
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 		rr := httptest.NewRecorder()
 
-		UploadFileHandler(cfg)(rr, req)
+		server.UploadFileHandler(cfg)(rr, req)
 
 		if rr.Code != http.StatusOK {
 			t.Errorf("Expected success for file within size limit, but got %v", rr.Code)

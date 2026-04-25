@@ -26,7 +26,21 @@ func initServer() {
 	initStoreFactories()
 }
 
-func UploadFileHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
+type Router struct {
+	http.ServeMux
+	counter int
+}
+
+func NewRouter() *Router {
+	return &Router{}
+}
+
+func (s *Router) HealthzHandler(w http.ResponseWriter, r *http.Request) {
+	totalUploads := fmt.Sprintf("Total uploads recieved: %d", s.counter)
+	io.WriteString(w, totalUploads)
+}
+
+func (s *Router) UploadFileHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxUploadSize)
 
@@ -38,10 +52,11 @@ func UploadFileHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
 		}
 		message := fmt.Sprintf("File has been uploaded to %s%s\n", r.Host, filepath.Join("/logs", filename))
 		io.WriteString(w, message)
+		s.counter++
 	}
 }
 
-func IndexHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
+func (s *Router) IndexHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accept := r.Header.Get("Accept")
 		var templateFile string
