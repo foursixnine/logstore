@@ -14,25 +14,20 @@ import (
 	"github.com/foursixnine/logstore/internal/utils"
 )
 
-var tmpl *template.Template
-
-func initTemplates() {
-	tmpl = template.Must(template.ParseFS(assets.FS, "templates/*"))
-	log.Println("Initialized templates")
-}
-
 func initServer() {
-	initTemplates()
 	initStoreFactories()
 }
 
 type Router struct {
 	http.ServeMux
 	counter int
+	tmpl    *template.Template
 }
 
 func NewRouter() *Router {
-	return &Router{}
+	return &Router{
+		tmpl: template.Must(template.ParseFS(assets.FS, "templates/*")),
+	}
 }
 
 func (s *Router) HealthzHandler(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +68,7 @@ func (s *Router) IndexHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
 			"Host": template.URL(r.Host),
 		}
 
-		if err := tmpl.ExecuteTemplate(w, templateFile, data); err != nil {
+		if err := s.tmpl.ExecuteTemplate(w, templateFile, data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
