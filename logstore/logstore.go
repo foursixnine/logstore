@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 )
 
 type LogStore struct {
@@ -30,7 +31,7 @@ func (ls *LogStore) Run() error {
 	idleConnsClosed := make(chan struct{})
 	go func() {
 		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt)
+		signal.Notify(sigint, syscall.SIGTERM, syscall.SIGINT)
 		<-sigint
 
 		if err := server.Shutdown(context.Background()); err != nil {
