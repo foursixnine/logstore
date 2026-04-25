@@ -1,4 +1,4 @@
-package logstore
+package router
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ import (
 	"github.com/foursixnine/logstore/internal/utils"
 )
 
-func initServer() {
+func init() {
 	initStoreFactories()
 }
 
@@ -24,10 +24,29 @@ type Router struct {
 	tmpl    *template.Template
 }
 
-func NewRouter() *Router {
-	return &Router{
+type RouterRuntimeConfig struct {
+	MaxUploadSize    int64
+	TempStringLength int
+	WorkingDir       string
+}
+
+func NewRouter(maxUploadsize int64, tempStringLength int, workingDir string) *Router {
+	router := &Router{
 		tmpl: template.Must(template.ParseFS(assets.FS, "templates/*")),
 	}
+
+	cfg := &RouterRuntimeConfig{
+		MaxUploadSize:    maxUploadsize,
+		TempStringLength: tempStringLength,
+		WorkingDir:       workingDir,
+	}
+
+	router.HandleFunc("POST /", router.UploadFileHandler(cfg))
+	router.HandleFunc("GET /", router.IndexHandler(cfg))
+	router.HandleFunc("GET /healthz", router.HealthzHandler)
+	router.Handle("GET /logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir(cfg.WorkingDir))))
+
+	return router
 }
 
 func (s *Router) HealthzHandler(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +54,7 @@ func (s *Router) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, totalUploads)
 }
 
-func (s *Router) UploadFileHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
+func (s *Router) UploadFileHandler(cfg *RouterRuntimeConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxUploadSize)
 
@@ -51,7 +70,7 @@ func (s *Router) UploadFileHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc 
 	}
 }
 
-func (s *Router) IndexHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
+func (s *Router) IndexHandler(cfg *RouterRuntimeConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accept := r.Header.Get("Accept")
 		var templateFile string
@@ -74,7 +93,7 @@ func (s *Router) IndexHandler(cfg *LogStoreRuntimeConfig) http.HandlerFunc {
 	}
 }
 
-func handleFileUpload(r *http.Request, cfg *LogStoreRuntimeConfig) (string, error) {
+func handleFileUpload(r *http.Request, cfg *RouterRuntimeConfig) (string, error) {
 
 	if len(r.Header["Content-Type"]) < 1 {
 		return "", fmt.Errorf("Content-Type is invalid; Request is invalid")

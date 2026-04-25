@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/foursixnine/logstore/internal/router"
 )
 
 type LogStore struct {
@@ -17,17 +19,11 @@ type LogStore struct {
 	CleanupDirectory bool
 }
 
-type LogStoreRuntimeConfig struct {
-	MaxUploadSize    int64
-	TempStringLength int
-	WorkingDir       string
-}
-
 func (ls *LogStore) Run() error {
 	defer ls.Cleanup()
 	var server http.Server
 	server.Addr = ls.ServerAddress
-	server.Handler = ls.SetupServer()
+	server.Handler = router.NewRouter(ls.MaxUploadSize, ls.TempStringLength, ls.WorkingDir)
 
 	idleConnsClosed := make(chan struct{})
 	go func() {
@@ -54,25 +50,6 @@ func (ls *LogStore) Run() error {
 	<-idleConnsClosed
 	log.Println("Connections stopped")
 	return nil
-}
-
-func (ls *LogStore) SetupServer() *Router {
-
-	cfg := &LogStoreRuntimeConfig{
-		MaxUploadSize:    ls.MaxUploadSize,
-		TempStringLength: ls.TempStringLength,
-		WorkingDir:       ls.WorkingDir,
-	}
-
-	initServer()
-
-	mux := NewRouter()
-	mux.HandleFunc("POST /", mux.UploadFileHandler(cfg))
-	mux.HandleFunc("GET /", mux.IndexHandler(cfg))
-	mux.HandleFunc("GET /healthz", mux.HealthzHandler)
-	mux.Handle("GET /logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir(ls.WorkingDir))))
-	return mux
-
 }
 
 func (ls *LogStore) Cleanup() {
