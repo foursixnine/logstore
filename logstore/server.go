@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/foursixnine/logstore/assets"
+	"github.com/foursixnine/logstore/internal/utils"
 )
 
 var tmpl *template.Template
@@ -81,7 +82,7 @@ func handleFileUpload(r *http.Request, cfg *LogStoreRuntimeConfig) (string, erro
 	}
 	defer fs.Close()
 
-	destination, err := createDestDir(cfg)
+	destination, err := utils.CreateDestDir(cfg.WorkingDir, cfg.TempStringLength)
 	if err != nil {
 		return "", err
 	}
