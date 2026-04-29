@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -197,12 +199,14 @@ func TestUploadSizeLimit(t *testing.T) {
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 		rr := httptest.NewRecorder()
 
-		server.UploadFileHandler(cfg)(rr, req)
+		server.UploadFileHandler(rr, req)
 
 		if rr.Code == http.StatusOK {
 			t.Errorf("Expected failure for file exceeding size limit, but got StatusOK")
 		}
 	})
+
+	var session string
 
 	t.Run("Within Limit", func(t *testing.T) {
 		body := new(bytes.Buffer)
@@ -218,10 +222,58 @@ func TestUploadSizeLimit(t *testing.T) {
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 		rr := httptest.NewRecorder()
 
-		server.UploadFileHandler(cfg)(rr, req)
+		server.UploadFileHandler(rr, req)
+		result := rr.Result()
 
-		if rr.Code != http.StatusOK {
+		if result.StatusCode != http.StatusOK {
 			t.Errorf("Expected success for file within size limit, but got %v", rr.Code)
 		}
+
+		re, err := regexp.Compile(`example.com/logs/(.*)/small.txt`)
+		if err != nil {
+			t.Logf("Error found: %v", err)
+			t.Fail()
+		}
+
+		// var bodyContents []byte
+		// t.Logf("Body length: %d", result.ContentLength)
+		// result.Body.Read(bodyContents)
+
+		matches := re.FindSubmatch(rr.Body.Bytes())
+		if matches == nil {
+			t.Fatalf("Path part not found in body: %s", matches)
+		}
+
+		t.Logf("result: %s", matches[1])
+		session = string(matches[1])
+
+	})
+
+	t.Run("Download archive", func(t *testing.T) {
+		sessionURL, err := url.JoinPath("/d", session, "tar")
+		if err != nil {
+			t.Fatalf("Found error %v", err)
+		}
+		t.Logf("Session url is: %s", sessionURL)
+		req := httptest.NewRequest("GET", sessionURL, nil)
+		rr := httptest.NewRecorder()
+
+		req.SetPathValue("session", session)
+		req.SetPathValue("type", "tar")
+
+		server.ArchiveHandler(rr, req)
+		result := rr.Result()
+
+		if result.StatusCode != http.StatusOK {
+			t.Errorf("Expected success for file within size limit, but got %v", rr.Code)
+		}
+
+		cd := result.Header.Get("Content-Disposition")
+		expected := fmt.Sprintf("attachment; filename=\"%s-logs.%s\"", session, "tar")
+		if cd != expected {
+			t.Fatalf("File header is incorrect, wanted %s, got %s", expected, cd)
+		}
+		t.Logf("Content: %s", cd)
+
 	})
 }

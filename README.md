@@ -6,6 +6,7 @@ A simple HTTP server for file storage and retrieval.
 - POST `/` to upload a file to the server, storing it with under a random directory
 - POST `/` a form to upload contents of a file, using `contents` and `filename` fields
 - GET `/logs/{random_directory}/{filename}` to retrieve files
+- GET `/d/{random_directory}/tar` to retrieve a tar file with contents of the "session"
 - GET `/logs/` to get a list of available directories
 - GET `/` for web UI (HTML or plain text), if it is from a browser, an html form will be displayed
 - Max upload size: 32MB

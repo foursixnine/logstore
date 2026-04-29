@@ -1,16 +1,20 @@
 package router
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/foursixnine/logstore/assets"
+	"github.com/foursixnine/logstore/internal/archive"
 	"github.com/foursixnine/logstore/internal/utils"
 )
 
@@ -22,6 +26,7 @@ type Router struct {
 	http.ServeMux
 	counter int
 	tmpl    *template.Template
+	cfg     *RouterRuntimeConfig
 }
 
 type RouterRuntimeConfig struct {
@@ -35,16 +40,17 @@ func NewRouter(maxUploadsize int64, tempStringLength int, workingDir string) *Ro
 		tmpl: template.Must(template.ParseFS(assets.FS, "templates/*")),
 	}
 
-	cfg := &RouterRuntimeConfig{
+	router.cfg = &RouterRuntimeConfig{
 		MaxUploadSize:    maxUploadsize,
 		TempStringLength: tempStringLength,
 		WorkingDir:       workingDir,
 	}
 
-	router.HandleFunc("POST /", router.UploadFileHandler(cfg))
-	router.HandleFunc("GET /", router.IndexHandler(cfg))
+	router.HandleFunc("POST /", router.UploadFileHandler)
+	router.HandleFunc("GET /", router.IndexHandler)
 	router.HandleFunc("GET /healthz", router.HealthzHandler)
-	router.Handle("GET /logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir(cfg.WorkingDir))))
+	router.HandleFunc("GET /d/{session}/{type}/", router.ArchiveHandler)
+	router.Handle("GET /logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir(router.cfg.WorkingDir))))
 
 	return router
 }
@@ -67,7 +73,28 @@ func (s *Router) UploadFileHandler(cfg *RouterRuntimeConfig) http.HandlerFunc {
 		message := fmt.Sprintf("File has been uploaded to %s%s\n", r.Host, filepath.Join("/logs", filename))
 		io.WriteString(w, message)
 		s.counter++
+func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
+
+	session := r.PathValue("session")
+	archiveType := r.PathValue("type")
+	archivePath := path.Join(s.cfg.WorkingDir, session)
+	fileName := session + "-logs." + archiveType
+	ar := archive.NewArchive(archivePath, fileName)
+	ar.Generate()
+
+	data, err := os.ReadFile(ar.Name())
+	if err != nil {
+		log.Println("Failed to read file")
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+
+	log.Printf("Serving %s", fileName)
+	contentDisposition := fmt.Sprintf("attachment; filename=\"%s\"", fileName)
+	w.Header().Add("Content-Disposition", contentDisposition)
+	http.ServeContent(w, r, fileName, time.Now(), bytes.NewReader(data))
+	log.Println("Finished serving file, deleting")
+	ar.Destroy()
 }
 
 func (s *Router) IndexHandler(cfg *RouterRuntimeConfig) http.HandlerFunc {

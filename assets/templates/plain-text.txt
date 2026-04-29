@@ -3,3 +3,4 @@ usage:
   curl {{.Host}} -X POST -F "file=@tmp-log.txt"
 
 Logs are available under http://{{.Host}}/logs
+Download logs as a tar file with {{.Host}}/d/{session}/tar
