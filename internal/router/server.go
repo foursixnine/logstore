@@ -60,19 +60,6 @@ func (s *Router) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, totalUploads)
 }
 
-func (s *Router) UploadFileHandler(cfg *RouterRuntimeConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxUploadSize)
-
-		filename, err := handleFileUpload(r, cfg)
-		if err != nil {
-			log.Printf("Error handling upload: %v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		message := fmt.Sprintf("File has been uploaded to %s%s\n", r.Host, filepath.Join("/logs", filename))
-		io.WriteString(w, message)
-		s.counter++
 func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
 
 	session := r.PathValue("session")
@@ -97,27 +84,41 @@ func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
 	ar.Destroy()
 }
 
-func (s *Router) IndexHandler(cfg *RouterRuntimeConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		accept := r.Header.Get("Accept")
-		var templateFile string
-		if strings.Contains(accept, "text/html") {
-			templateFile = "index.html"
-		} else if accept == "application/json" {
-			http.Error(w, "Json output is not yet supported", http.StatusNotImplemented)
-			return
-		} else {
-			templateFile = "plain-text.txt"
-		}
+func (s *Router) UploadFileHandler(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadSize)
 
-		data := map[string]template.URL{
-			"Host": template.URL(r.Host),
-		}
-
-		if err := s.tmpl.ExecuteTemplate(w, templateFile, data); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
+	filename, err := handleFileUpload(r, s.cfg)
+	if err != nil {
+		log.Printf("Error handling upload: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	message := fmt.Sprintf("File has been uploaded to %s%s\n", r.Host, filepath.Join("/logs", filename))
+	io.WriteString(w, message)
+	s.counter++
+
+}
+
+func (s *Router) IndexHandler(w http.ResponseWriter, r *http.Request) {
+	accept := r.Header.Get("Accept")
+	var templateFile string
+	if strings.Contains(accept, "text/html") {
+		templateFile = "index.html"
+	} else if accept == "application/json" {
+		http.Error(w, "Json output is not yet supported", http.StatusNotImplemented)
+		return
+	} else {
+		templateFile = "plain-text.txt"
+	}
+
+	data := map[string]template.URL{
+		"Host": template.URL(r.Host),
+	}
+
+	if err := s.tmpl.ExecuteTemplate(w, templateFile, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
 }
 
 func handleFileUpload(r *http.Request, cfg *RouterRuntimeConfig) (string, error) {
