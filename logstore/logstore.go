@@ -3,6 +3,7 @@ package logstore
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,8 +22,13 @@ type LogStore struct {
 
 func (ls *LogStore) Run() error {
 	defer ls.Cleanup()
+
+	// try listening on the port first and foremost
+	// there's no need to do anything else if this fails
+
+	listener := ls.getPort()
+
 	var server http.Server
-	server.Addr = ls.ServerAddress
 	server.Handler = router.NewRouter(ls.MaxUploadSize, ls.TempStringLength, ls.WorkingDir)
 
 	idleConnsClosed := make(chan struct{})
@@ -37,18 +43,16 @@ func (ls *LogStore) Run() error {
 		close(idleConnsClosed)
 	}()
 
-	log.Printf("Starting logstore on %s", ls.ServerAddress)
+	log.Printf("Starting logstore on %s", listener.Addr())
 	log.Printf("Storing files at: %s", ls.WorkingDir)
 
-	if err := server.ListenAndServe(); err != http.ErrServerClosed {
-		log.Printf("HTTP server ListenAndServe: %v", err)
+	if err := server.Serve(listener); err != http.ErrServerClosed {
 		close(idleConnsClosed)
 		return err
 	}
 
-	log.Println("Stopping logstore")
+	log.Println("Shutting down LogStore")
 	<-idleConnsClosed
-	log.Println("Connections stopped")
 	return nil
 }
 
@@ -65,4 +69,13 @@ func (ls *LogStore) Cleanup() {
 
 	log.Println("Cleaned up working directory")
 
+}
+
+func (ls *LogStore) getPort() net.Listener {
+	listener, err := net.Listen("tcp", ls.ServerAddress)
+	if err != nil {
+		log.Fatalf("Unrecoverable error found: %v", err)
+		os.Exit(1)
+	}
+	return listener
 }

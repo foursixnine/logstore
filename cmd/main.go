@@ -20,7 +20,7 @@ func main() {
 	var Config Options
 
 	flag.StringVar(&Config.RootPath, "root-path", "tmp/logstore/", "Root path for the application, defaults to $PWD/tmp/logstore; path must exist")
-	flag.StringVar(&Config.Port, "port", ":3000", "Port to listen on")
+	flag.StringVar(&Config.Port, "port", ":3000", "Port to listen on, use \":0\" to select a random port")
 	flag.IntVar(&Config.TempStringLength, "string-length", 4, "Random string length, used as a name for directories to store logs")
 	flag.Int64Var(&Config.MaxUploadSize, "max-upload-size", 32<<20, "Maximum upload size in bytes")
 	flag.BoolVar(&Config.Cleanup, "cleanup", true, "Cleanup working directory on shutdown")
@@ -43,5 +43,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Println("Server stopped successfully")
+	log.Println("LogStore stopped successfully")
 }
