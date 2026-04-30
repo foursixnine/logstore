@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -47,6 +48,7 @@ func NewRouter(maxUploadsize int64, tempStringLength int, workingDir string) *Ro
 	}
 
 	router.HandleFunc("POST /", router.UploadFileHandler)
+	router.HandleFunc("POST /{session}", router.UploadFileHandler)
 	router.HandleFunc("GET /", router.IndexHandler)
 	router.HandleFunc("GET /healthz", router.HealthzHandler)
 	router.HandleFunc("GET /d/{session}/{type}/", router.ArchiveHandler)
@@ -86,7 +88,6 @@ func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Router) UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadSize)
-
 	filename, err := handleFileUpload(r, s.cfg)
 	if err != nil {
 		log.Printf("Error handling upload: %v", err)
@@ -139,7 +140,8 @@ func handleFileUpload(r *http.Request, cfg *RouterRuntimeConfig) (string, error)
 	}
 	defer fs.Close()
 
-	destination, err := utils.CreateDestDir(cfg.WorkingDir, cfg.TempStringLength)
+	session := r.PathValue("session")
+	destination, err := getSessionDirectory(cfg.WorkingDir, cfg.TempStringLength, session)
 	if err != nil {
 		return "", err
 	}
@@ -153,4 +155,22 @@ func handleFileUpload(r *http.Request, cfg *RouterRuntimeConfig) (string, error)
 	log.Printf("Written %d bytes to %s", written, file)
 	cleanPath := strings.TrimPrefix(file, filepath.Join(cfg.WorkingDir))
 	return cleanPath, nil
+}
+
+func getSessionDirectory(workingDir string, tempStringLength int, session string) (string, error) {
+	if session != "" {
+		sessionDirectory := path.Join(workingDir, session)
+		dirInfo, err := os.Stat(sessionDirectory)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return "", fmt.Errorf("Session %s is invalid", session)
+			}
+			return "", err
+		}
+		if !dirInfo.IsDir() {
+			return "", fmt.Errorf("Session %s is not a directory", session)
+		}
+		return sessionDirectory, nil
+	}
+	return utils.CreateDestDir(workingDir, tempStringLength)
 }

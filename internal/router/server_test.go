@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/foursixnine/logstore/internal/utils"
 )
 
 // TestPathTraversalVulnerability demonstrates how an attacker can escape
@@ -176,7 +178,7 @@ func TestHandleFileUpload_MultipartForm(t *testing.T) {
 	}
 }
 
-func TestUploadSizeLimit(t *testing.T) {
+func TestE2EUpload(t *testing.T) {
 	workingDir := t.TempDir()
 	cfg := &RouterRuntimeConfig{
 		WorkingDir:       workingDir,
@@ -186,17 +188,7 @@ func TestUploadSizeLimit(t *testing.T) {
 
 	server := NewRouter(cfg.MaxUploadSize, cfg.TempStringLength, cfg.WorkingDir)
 	t.Run("Exceeds Limit", func(t *testing.T) {
-		body := new(bytes.Buffer)
-		writer := multipart.NewWriter(body)
-		part, err := writer.CreateFormFile("file", "large.txt")
-		if err != nil {
-			t.Fatalf("failed to create form file: %v", err)
-		}
-		part.Write(bytes.Repeat([]byte("a"), 1024)) // 1KB
-		writer.Close()
-
-		req := httptest.NewRequest("POST", "/", body)
-		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req := setupUploadRequest(t, "large.txt", "/", 1024)
 		rr := httptest.NewRecorder()
 
 		server.UploadFileHandler(rr, req)
@@ -209,17 +201,7 @@ func TestUploadSizeLimit(t *testing.T) {
 	var session string
 
 	t.Run("Within Limit", func(t *testing.T) {
-		body := new(bytes.Buffer)
-		writer := multipart.NewWriter(body)
-		part, err := writer.CreateFormFile("file", "small.txt")
-		if err != nil {
-			t.Fatalf("failed to create form file: %v", err)
-		}
-		part.Write(bytes.Repeat([]byte("a"), 256)) // 256B
-		writer.Close()
-
-		req := httptest.NewRequest("POST", "/", body)
-		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req := setupUploadRequest(t, "small.txt", "/", 256)
 		rr := httptest.NewRecorder()
 
 		server.UploadFileHandler(rr, req)
@@ -234,10 +216,6 @@ func TestUploadSizeLimit(t *testing.T) {
 			t.Logf("Error found: %v", err)
 			t.Fail()
 		}
-
-		// var bodyContents []byte
-		// t.Logf("Body length: %d", result.ContentLength)
-		// result.Body.Read(bodyContents)
 
 		matches := re.FindSubmatch(rr.Body.Bytes())
 		if matches == nil {
@@ -254,7 +232,7 @@ func TestUploadSizeLimit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Found error %v", err)
 		}
-		t.Logf("Session url is: %s", sessionURL)
+
 		req := httptest.NewRequest("GET", sessionURL, nil)
 		rr := httptest.NewRecorder()
 
@@ -273,7 +251,59 @@ func TestUploadSizeLimit(t *testing.T) {
 		if cd != expected {
 			t.Fatalf("File header is incorrect, wanted %s, got %s", expected, cd)
 		}
-		t.Logf("Content: %s", cd)
 
 	})
+
+	t.Run("Upload to session", func(t *testing.T) {
+
+		sessionURL, err := url.JoinPath("/", session)
+		req := setupUploadRequest(t, "big.txt", sessionURL, 256)
+		req.SetPathValue("session", session)
+
+		rr := httptest.NewRecorder()
+
+		server.UploadFileHandler(rr, req)
+
+		result := rr.Result()
+		if result.StatusCode != http.StatusOK {
+			t.Errorf("Expected success for file within size limit, but got %v", rr.Code)
+		}
+
+		re, err := regexp.Compile(`example.com/logs/(.*)/big.txt`)
+		if err != nil {
+			t.Logf("Error found: %v", err)
+			t.Fail()
+		}
+
+		matches := re.FindSubmatch(rr.Body.Bytes())
+		if matches == nil {
+			t.Fatalf("Path part not found in body: %s", matches)
+		}
+
+		t.Logf("result: %s", matches[1])
+		if session != string(matches[1]) {
+			t.Fatalf("Session error, wanted %s but got %s", session, matches[1])
+		}
+
+	})
+
+}
+
+func setupUploadRequest(t *testing.T, name string, path string, size int) *http.Request {
+	t.Helper()
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	defer writer.Close()
+
+	part, err := writer.CreateFormFile("file", name)
+	if err != nil {
+		t.Fatalf("failed to create form file: %v", err)
+	}
+
+	contents := utils.RandomString(1)
+	part.Write(bytes.Repeat([]byte(contents), size)) // 256B
+
+	req := httptest.NewRequest("POST", path, body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
 }
