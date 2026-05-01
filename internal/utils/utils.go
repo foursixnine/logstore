@@ -2,13 +2,15 @@ package utils
 
 import (
 	"crypto/rand"
-	"fmt"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
 )
 
 var charset = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+var maxSessionCreateAttempts = 10
+var ErrTooManyAttempts = errors.New("Too many attempts to create session directory")
 
 func RandomString(n int) string {
 	b := make([]byte, n)
@@ -20,9 +22,9 @@ func RandomString(n int) string {
 	return string(b)
 }
 
-func CreateDestDir(workingDir string, tempTringLength int) (string, error) {
-	for range 10 {
-		randomString := RandomString(tempTringLength)
+func CreateSessionDirectory(workingDir string, tempStringLength int) (string, error) {
+	for range maxSessionCreateAttempts {
+		randomString := RandomString(tempStringLength)
 		directory := filepath.Join(workingDir, randomString)
 
 		if err := os.Mkdir(directory, 0755); err != nil {
@@ -32,5 +34,5 @@ func CreateDestDir(workingDir string, tempTringLength int) (string, error) {
 		return directory, nil
 	}
 
-	return "", fmt.Errorf("Too many attempts to create temporary dir in working directory (%s)", workingDir)
+	return "", ErrTooManyAttempts
 }

@@ -17,6 +17,14 @@ import (
 	"github.com/foursixnine/logstore/internal/utils"
 )
 
+var s *Router
+
+func TestMain(m *testing.M) {
+	// Create a temporary working directory
+	s = NewRouter(1024, 4, "")
+	m.Run()
+}
+
 // TestPathTraversalVulnerability demonstrates how an attacker can escape
 // the working directory using path traversal sequences in the filename
 func TestPathTraversalVulnerability(t *testing.T) {
@@ -27,6 +35,8 @@ func TestPathTraversalVulnerability(t *testing.T) {
 		WorkingDir:       workingDir,
 		MaxUploadSize:    32 << 20,
 	}
+
+	s.cfg = cfg
 
 	// Create a test file outside the working directory
 	outsideDir := filepath.Dir(workingDir)
@@ -58,7 +68,7 @@ func TestPathTraversalVulnerability(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	// Call handleFileUpload
-	filename, err := handleFileUpload(req, cfg)
+	filename, err := s.handleFileUpload(req)
 	if err != nil {
 		// Currently the code doesn't prevent this, but let's see what path it returns
 		t.Logf("Error (expected if fixed): %v", err)
@@ -116,6 +126,7 @@ func TestHandleFileUpload_SimpleForm(t *testing.T) {
 		WorkingDir:       workingDir,
 		MaxUploadSize:    1024,
 	}
+	s.cfg = cfg
 
 	form := url.Values{}
 	form.Add("filename", "orchestrated_simple.txt")
@@ -124,7 +135,7 @@ func TestHandleFileUpload_SimpleForm(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	savedPath, err := handleFileUpload(req, cfg)
+	savedPath, err := s.handleFileUpload(req)
 	if err != nil {
 		t.Fatalf("unexpected error in handleFileUpload: %v", err)
 	}
@@ -139,10 +150,6 @@ func TestHandleFileUpload_SimpleForm(t *testing.T) {
 	}
 }
 
-func init() {
-	initStoreFactories()
-}
-
 func TestHandleFileUpload_MultipartForm(t *testing.T) {
 	workingDir := t.TempDir()
 	cfg := &RouterRuntimeConfig{
@@ -150,6 +157,7 @@ func TestHandleFileUpload_MultipartForm(t *testing.T) {
 		WorkingDir:       workingDir,
 		MaxUploadSize:    1024,
 	}
+	s.cfg = cfg
 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
@@ -163,7 +171,7 @@ func TestHandleFileUpload_MultipartForm(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	savedPath, err := handleFileUpload(req, cfg)
+	savedPath, err := s.handleFileUpload(req)
 	if err != nil {
 		t.Fatalf("unexpected error in handleFileUpload: %v", err)
 	}
@@ -185,13 +193,13 @@ func TestE2EUpload(t *testing.T) {
 		TempStringLength: 4,
 		MaxUploadSize:    512, // 512 bytes limit
 	}
+	s.cfg = cfg
 
-	server := NewRouter(cfg.MaxUploadSize, cfg.TempStringLength, cfg.WorkingDir)
 	t.Run("Exceeds Limit", func(t *testing.T) {
 		req := setupUploadRequest(t, "large.txt", "/", 1024)
 		rr := httptest.NewRecorder()
 
-		server.UploadFileHandler(rr, req)
+		s.UploadFileHandler(rr, req)
 
 		if rr.Code == http.StatusOK {
 			t.Errorf("Expected failure for file exceeding size limit, but got StatusOK")
@@ -204,7 +212,7 @@ func TestE2EUpload(t *testing.T) {
 		req := setupUploadRequest(t, "small.txt", "/", 256)
 		rr := httptest.NewRecorder()
 
-		server.UploadFileHandler(rr, req)
+		s.UploadFileHandler(rr, req)
 		result := rr.Result()
 
 		if result.StatusCode != http.StatusOK {
@@ -224,7 +232,6 @@ func TestE2EUpload(t *testing.T) {
 
 		t.Logf("result: %s", matches[1])
 		session = string(matches[1])
-
 	})
 
 	t.Run("Download archive", func(t *testing.T) {
@@ -239,7 +246,7 @@ func TestE2EUpload(t *testing.T) {
 		req.SetPathValue("session", session)
 		req.SetPathValue("type", "tar")
 
-		server.ArchiveHandler(rr, req)
+		s.ArchiveHandler(rr, req)
 		result := rr.Result()
 
 		if result.StatusCode != http.StatusOK {
@@ -251,18 +258,16 @@ func TestE2EUpload(t *testing.T) {
 		if cd != expected {
 			t.Fatalf("File header is incorrect, wanted %s, got %s", expected, cd)
 		}
-
 	})
 
 	t.Run("Upload to session", func(t *testing.T) {
-
 		sessionURL, err := url.JoinPath("/", session)
 		req := setupUploadRequest(t, "big.txt", sessionURL, 256)
 		req.SetPathValue("session", session)
 
 		rr := httptest.NewRecorder()
 
-		server.UploadFileHandler(rr, req)
+		s.UploadFileHandler(rr, req)
 
 		result := rr.Result()
 		if result.StatusCode != http.StatusOK {
@@ -286,7 +291,6 @@ func TestE2EUpload(t *testing.T) {
 		}
 
 	})
-
 }
 
 func setupUploadRequest(t *testing.T, name string, path string, size int) *http.Request {

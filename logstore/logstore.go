@@ -68,7 +68,6 @@ func (ls *LogStore) Cleanup() {
 	}
 
 	log.Println("Cleaned up working directory")
-
 }
 
 func (ls *LogStore) getPort() net.Listener {

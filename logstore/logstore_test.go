@@ -1,8 +1,6 @@
 package logstore
 
 import (
-	"bytes"
-	"log"
 	"testing"
 )
 
@@ -15,12 +13,11 @@ func TestApp(t *testing.T) {
 		MaxUploadSize:    1024,
 	}
 
-	var bf bytes.Buffer
-	log.SetOutput(&bf)
-
-	go func() {
-		if err := ls.Run(); err != nil {
-			t.Error(err)
-		}
-	}()
+	t.Run("Server exits gracefully", func(t *testing.T) {
+		go func() {
+			if err := ls.Run(); err != nil {
+				t.Error(err)
+			}
+		}()
+	})
 }

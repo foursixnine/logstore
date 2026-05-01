@@ -19,8 +19,17 @@ type FileStore interface {
 type FileStoreFactory func(r *http.Request, maxUploadSize int64) (FileStore, error)
 
 // RegisterStoreFactory allows extending supported content types without modifying logstore.go
-func RegisterStoreFactory(contentType string, factory FileStoreFactory) {
-	storeFactories[contentType] = factory
+func (s *Router) registerStoreFactory() {
+	s.storeFactories = make(map[string]FileStoreFactory)
+	s.storeFactories["application/x-www-form-urlencoded"] = func(r *http.Request, _ int64) (FileStore, error) {
+		fs, err := NewSimpleFormStore(r)
+		return fs, err
+	}
+
+	s.storeFactories["multipart/form-data"] = func(r *http.Request, maxUploadSize int64) (FileStore, error) {
+		fs, err := NewMultipartFormStore(r, maxUploadSize)
+		return fs, err
+	}
 }
 
 type SimpleFormStore struct {
@@ -144,21 +153,4 @@ func NewMultipartFormStore(r *http.Request, maxUploadSize int64) (*MultipartForm
 	}
 
 	return fs, nil
-}
-
-var storeFactories = map[string]FileStoreFactory{}
-
-func initStoreFactories() {
-	RegisterStoreFactory("application/x-www-form-urlencoded", func(r *http.Request, _ int64) (FileStore, error) {
-		// We assign these explicitly to satisfy the return interface type
-		fs, err := NewSimpleFormStore(r)
-		return fs, err
-	})
-
-	RegisterStoreFactory("multipart/form-data", func(r *http.Request, maxUploadSize int64) (FileStore, error) {
-		fs, err := NewMultipartFormStore(r, maxUploadSize)
-		return fs, err
-	})
-
-	log.Println("Initialized store factories")
 }

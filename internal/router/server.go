@@ -19,15 +19,12 @@ import (
 	"github.com/foursixnine/logstore/internal/utils"
 )
 
-func init() {
-	initStoreFactories()
-}
-
 type Router struct {
 	http.ServeMux
-	counter int
-	tmpl    *template.Template
-	cfg     *RouterRuntimeConfig
+	counter        int
+	tmpl           *template.Template
+	cfg            *RouterRuntimeConfig
+	storeFactories map[string]FileStoreFactory
 }
 
 type RouterRuntimeConfig struct {
@@ -47,6 +44,8 @@ func NewRouter(maxUploadsize int64, tempStringLength int, workingDir string) *Ro
 		WorkingDir:       workingDir,
 	}
 
+	router.registerStoreFactory()
+
 	router.HandleFunc("POST /", router.UploadFileHandler)
 	router.HandleFunc("POST /{session}", router.UploadFileHandler)
 	router.HandleFunc("GET /", router.IndexHandler)
@@ -63,12 +62,12 @@ func (s *Router) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
-
 	session := r.PathValue("session")
 	archiveType := r.PathValue("type")
 	archivePath := path.Join(s.cfg.WorkingDir, session)
 	fileName := session + "-logs." + archiveType
 	ar := archive.NewArchive(archivePath, fileName)
+
 	ar.Generate()
 
 	data, err := os.ReadFile(ar.Name())
@@ -81,28 +80,34 @@ func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Serving %s", fileName)
 	contentDisposition := fmt.Sprintf("attachment; filename=\"%s\"", fileName)
 	w.Header().Add("Content-Disposition", contentDisposition)
+
 	http.ServeContent(w, r, fileName, time.Now(), bytes.NewReader(data))
 	log.Println("Finished serving file, deleting")
 	ar.Destroy()
 }
 
 func (s *Router) UploadFileHandler(w http.ResponseWriter, r *http.Request) {
+	if len(r.Header["Content-Type"]) < 1 {
+		http.Error(w, "Content-Type is invalid; Request is invalid", http.StatusBadRequest)
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadSize)
-	filename, err := handleFileUpload(r, s.cfg)
+	filename, err := s.handleFileUpload(r)
 	if err != nil {
 		log.Printf("Error handling upload: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	message := fmt.Sprintf("File has been uploaded to %s%s\n", r.Host, filepath.Join("/logs", filename))
 	io.WriteString(w, message)
 	s.counter++
-
 }
 
 func (s *Router) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	accept := r.Header.Get("Accept")
 	var templateFile string
+
 	if strings.Contains(accept, "text/html") {
 		templateFile = "index.html"
 	} else if accept == "application/json" {
@@ -119,29 +124,23 @@ func (s *Router) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	if err := s.tmpl.ExecuteTemplate(w, templateFile, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-
 }
 
-func handleFileUpload(r *http.Request, cfg *RouterRuntimeConfig) (string, error) {
-
-	if len(r.Header["Content-Type"]) < 1 {
-		return "", fmt.Errorf("Content-Type is invalid; Request is invalid")
-	}
-
+func (s *Router) handleFileUpload(r *http.Request) (string, error) {
 	contentType := strings.Split(r.Header["Content-Type"][0], ";")[0]
-	store, exists := storeFactories[contentType]
+	store, exists := s.storeFactories[contentType]
 	if !exists {
 		return "", fmt.Errorf("Unrecognized Content-Type: '%s'", contentType)
 	}
 
-	fs, err := store(r, cfg.MaxUploadSize)
+	fs, err := store(r, s.cfg.MaxUploadSize)
 	if err != nil {
 		return "", err
 	}
 	defer fs.Close()
 
 	session := r.PathValue("session")
-	destination, err := getSessionDirectory(cfg.WorkingDir, cfg.TempStringLength, session)
+	destination, err := getSessionDirectory(s.cfg.WorkingDir, s.cfg.TempStringLength, session)
 	if err != nil {
 		return "", err
 	}
@@ -153,7 +152,7 @@ func handleFileUpload(r *http.Request, cfg *RouterRuntimeConfig) (string, error)
 	}
 
 	log.Printf("Written %d bytes to %s", written, file)
-	cleanPath := strings.TrimPrefix(file, filepath.Join(cfg.WorkingDir))
+	cleanPath := strings.TrimPrefix(file, filepath.Join(s.cfg.WorkingDir))
 	return cleanPath, nil
 }
 
@@ -172,5 +171,5 @@ func getSessionDirectory(workingDir string, tempStringLength int, session string
 		}
 		return sessionDirectory, nil
 	}
-	return utils.CreateDestDir(workingDir, tempStringLength)
+	return utils.CreateSessionDirectory(workingDir, tempStringLength)
 }
