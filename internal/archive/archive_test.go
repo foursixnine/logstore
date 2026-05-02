@@ -3,11 +3,17 @@ package archive
 import (
 	"archive/tar"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
+	slog.SetDefault(slog.New(h))
+	m.Run()
+}
 
 func TestArchiveGeneration(t *testing.T) {
 	workingDir := t.TempDir()
@@ -46,7 +52,7 @@ func TestArchiveGeneration(t *testing.T) {
 			break // End of archive
 		}
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		t.Logf("Found %s (%d)\n", hdr.Name, hdr.Size)
 	}

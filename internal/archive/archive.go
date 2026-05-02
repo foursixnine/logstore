@@ -2,8 +2,9 @@ package archive
 
 import (
 	"archive/tar"
+	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 )
@@ -53,10 +54,12 @@ func (ar *Archive) Generate() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("Wrote %d bytes to %s", archiveInfo.Size(), ar.Name())
+	message := fmt.Sprintf("Wrote %d bytes to %s", archiveInfo.Size(), ar.Name())
+	slog.Debug(message)
 
 	if err := tw.Close(); err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		return err
 	}
 
 	return nil
@@ -72,6 +75,7 @@ func (ar *Archive) Destroy() error {
 }
 
 func appendToArchive(fileList []string, root *os.Root, tw *tar.Writer) error {
+	slog.Debug("Appending files to archive", "files", fileList)
 	for _, file := range fileList {
 		fileInfo, err := fs.Stat(root.FS(), file)
 		if err != nil {
@@ -84,24 +88,20 @@ func appendToArchive(fileList []string, root *os.Root, tw *tar.Writer) error {
 		}
 
 		if err := tw.WriteHeader(tarHeader); err != nil {
-			log.Fatal(err)
+			return err
 		}
-
-		log.Printf("Header of %s is %d", tarHeader.Name, tarHeader.Size)
 
 		fileBuffer, err := fs.ReadFile(root.FS(), file)
 		if err != nil {
 			return err
 		}
 
-		log.Printf("%s has a size of %d", file, len(fileBuffer))
-
 		written, err := tw.Write(fileBuffer)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
-		log.Printf("Added '%s' (%d)", file, written)
+		slog.Debug("Added file to archive", "name", file, "size", written)
 
 	}
 	return nil
@@ -125,16 +125,12 @@ func listFiles(root *os.Root) ([]string, error) {
 
 	err := fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			log.Printf("Error walking directory: %v", err)
 			return err
 		}
 
 		if d.IsDir() {
-			log.Print("Skipping directory")
 			return nil
 		}
-
-		log.Printf("Walking on %s", path)
 
 		fileNames = append(fileNames, path)
 
@@ -142,7 +138,6 @@ func listFiles(root *os.Root) ([]string, error) {
 	})
 
 	if err != nil {
-		log.Println("Unexpected error")
 		return fileNames, err
 	}
 

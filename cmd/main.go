@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/foursixnine/logstore/logstore"
@@ -28,7 +28,8 @@ func main() {
 
 	workingDir, err := os.MkdirTemp(Config.RootPath, "logstore-workdir-*")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 
 	ls := &logstore.LogStore{
@@ -40,8 +41,9 @@ func main() {
 	}
 
 	if err := ls.Run(); err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 
-	log.Println("LogStore stopped successfully")
+	slog.Info("LogStore stopped successfully")
 }

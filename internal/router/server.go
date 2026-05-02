@@ -2,11 +2,10 @@ package router
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"html/template"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -68,21 +67,24 @@ func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
 	fileName := session + "-logs." + archiveType
 	ar := archive.NewArchive(archivePath, fileName)
 
-	ar.Generate()
+	if err := ar.Generate(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	data, err := os.ReadFile(ar.Name())
 	if err != nil {
-		log.Println("Failed to read file")
-		log.Println(err)
+		slog.Debug("Failed to read file", "file", ar.Name())
+		slog.Error(err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	log.Printf("Serving %s", fileName)
+	slog.Info("Serving", "file", fileName)
 	contentDisposition := fmt.Sprintf("attachment; filename=\"%s\"", fileName)
 	w.Header().Add("Content-Disposition", contentDisposition)
 
 	http.ServeContent(w, r, fileName, time.Now(), bytes.NewReader(data))
-	log.Println("Finished serving file, deleting")
+	slog.Info("Finished serving file, deleting")
 	ar.Destroy()
 }
 
@@ -94,7 +96,7 @@ func (s *Router) UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadSize)
 	filename, err := s.handleFileUpload(r)
 	if err != nil {
-		log.Printf("Error handling upload: %v", err)
+		slog.Error("Failed handling upload", "error", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -122,6 +124,7 @@ func (s *Router) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.tmpl.ExecuteTemplate(w, templateFile, data); err != nil {
+		slog.Error("Template exectution failed", "file", templateFile, "data", data)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -140,7 +143,7 @@ func (s *Router) handleFileUpload(r *http.Request) (string, error) {
 	defer fs.Close()
 
 	session := r.PathValue("session")
-	destination, err := getSessionDirectory(s.cfg.WorkingDir, s.cfg.TempStringLength, session)
+	destination, err := utils.GetSessionDirectory(s.cfg.WorkingDir, s.cfg.TempStringLength, session)
 	if err != nil {
 		return "", err
 	}
@@ -151,25 +154,11 @@ func (s *Router) handleFileUpload(r *http.Request) (string, error) {
 		return "", err
 	}
 
-	log.Printf("Written %d bytes to %s", written, file)
+	slog.Info("upload handled, file saved", "file", file, "bytes", written)
 	cleanPath := strings.TrimPrefix(file, filepath.Join(s.cfg.WorkingDir))
 	return cleanPath, nil
 }
 
-func getSessionDirectory(workingDir string, tempStringLength int, session string) (string, error) {
-	if session != "" {
-		sessionDirectory := path.Join(workingDir, session)
-		dirInfo, err := os.Stat(sessionDirectory)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return "", fmt.Errorf("Session %s is invalid", session)
-			}
-			return "", err
-		}
-		if !dirInfo.IsDir() {
-			return "", fmt.Errorf("Session %s is not a directory", session)
-		}
-		return sessionDirectory, nil
-	}
-	return utils.CreateSessionDirectory(workingDir, tempStringLength)
+func (s *Router) GetCounter() int {
+	return s.counter
 }

@@ -2,7 +2,8 @@ package logstore
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ type LogStore struct {
 	MaxUploadSize    int64
 	ServerAddress    string
 	CleanupDirectory bool
+	Server           http.Server
 }
 
 func (ls *LogStore) Run() error {
@@ -28,8 +30,7 @@ func (ls *LogStore) Run() error {
 
 	listener := ls.getPort()
 
-	var server http.Server
-	server.Handler = router.NewRouter(ls.MaxUploadSize, ls.TempStringLength, ls.WorkingDir)
+	ls.Server.Handler = router.NewRouter(ls.MaxUploadSize, ls.TempStringLength, ls.WorkingDir)
 
 	idleConnsClosed := make(chan struct{})
 	go func() {
@@ -37,43 +38,44 @@ func (ls *LogStore) Run() error {
 		signal.Notify(sigint, syscall.SIGTERM, syscall.SIGINT)
 		<-sigint
 
-		if err := server.Shutdown(context.Background()); err != nil {
-			log.Printf("HTTP server Shutdown: %v", err)
+		if err := ls.Server.Shutdown(context.Background()); err != nil {
+			slog.Error("HTTP server Shutdown", "error", err.Error())
 		}
 		close(idleConnsClosed)
 	}()
 
-	log.Printf("Starting logstore on %s", listener.Addr())
-	log.Printf("Storing files at: %s", ls.WorkingDir)
+	slog.Info("Starting logstore at:", "address", listener.Addr())
+	slog.Info("Working directory:", "directory", ls.WorkingDir)
 
-	if err := server.Serve(listener); err != http.ErrServerClosed {
+	if err := ls.Server.Serve(listener); err != http.ErrServerClosed {
 		close(idleConnsClosed)
 		return err
 	}
 
-	log.Println("Shutting down LogStore")
+	slog.Info("Shutting down LogStore")
 	<-idleConnsClosed
 	return nil
 }
 
 func (ls *LogStore) Cleanup() {
 	if !ls.CleanupDirectory {
-		log.Println("Leaving working directory intact")
+		slog.Info("Leaving working directory intact")
 		return
 	}
 
 	if err := os.RemoveAll(ls.WorkingDir); err != nil {
-		log.Printf("Failure cleaning up %s: %v\n", ls.WorkingDir, err)
-		return
+		message := fmt.Sprintf("Failure cleaning up %s: %v\n", ls.WorkingDir, err)
+		slog.Error(message)
+		os.Exit(2)
 	}
 
-	log.Println("Cleaned up working directory")
+	slog.Info("Cleaned up working directory")
 }
 
 func (ls *LogStore) getPort() net.Listener {
 	listener, err := net.Listen("tcp", ls.ServerAddress)
 	if err != nil {
-		log.Fatalf("Unrecoverable error found: %v", err)
+		slog.Error(err.Error())
 		os.Exit(1)
 	}
 	return listener
