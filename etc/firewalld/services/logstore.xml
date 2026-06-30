@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<service>
+  <short>Foursixnine file upload service</short>
+  <description>Foursixnine file upload service</description>
+  <port port="35900" protocol="tcp"/>
+</service>
