@@ -40,6 +40,7 @@ func CreateSessionDirectory(workingDir string, tempStringLength int) (string, er
 
 func GetSessionDirectory(workingDir string, tempStringLength int, session string) (string, error) {
 	if session != "" {
+		session = filepath.Clean(session)
 		sessionDirectory := path.Join(workingDir, session)
 		dirInfo, err := os.Stat(sessionDirectory)
 		if err != nil {

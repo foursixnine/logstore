@@ -61,9 +61,10 @@ func (s *Router) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
-	session := r.PathValue("session")
+	session := filepath.Clean(r.PathValue("session"))
 	archiveType := r.PathValue("type")
 	archivePath := path.Join(s.cfg.WorkingDir, session)
+
 	fileName := session + "-logs." + archiveType
 	ar := archive.NewArchive(archivePath, fileName)
 
@@ -77,6 +78,7 @@ func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Failed to read file", "file", ar.Name())
 		slog.Error(err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	slog.Info("Serving", "file", fileName)
@@ -91,6 +93,7 @@ func (s *Router) ArchiveHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Router) UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	if len(r.Header["Content-Type"]) < 1 {
 		http.Error(w, "Content-Type is invalid; Request is invalid", http.StatusBadRequest)
+		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadSize)

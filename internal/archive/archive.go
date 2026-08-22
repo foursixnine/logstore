@@ -57,11 +57,6 @@ func (ar *Archive) Generate() error {
 	message := fmt.Sprintf("Wrote %d bytes to %s", archiveInfo.Size(), ar.Name())
 	slog.Debug(message)
 
-	if err := tw.Close(); err != nil {
-		slog.Error(err.Error())
-		return err
-	}
-
 	return nil
 
 }
